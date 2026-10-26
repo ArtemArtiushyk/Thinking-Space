@@ -28,3 +28,9 @@
 # October 26: New feature! (a hour later)
 ## Resiable menu
 ### The menu is now resizable
+
+# HOW TO USE
+## Spaces
+### There's a bar on the left of the window with a + button on top. That button adds a Spaces ("chats") below. The Spaces can be delete with the X buttons.
+## Thoughts
+### By clicking the Space, it opens an area on the right, where Thoughts ("messages") can be written. You write them in the text bar below. Press the button with the checkmark to send it or press Ctrl + Enter. The Thoughts can also be deleted with the X buttons.
