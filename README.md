@@ -17,4 +17,14 @@
 ![img](assets/image4.png)
 
 ## Upcoming implementations:
-### Thought deletion, Space naming, dark mode.
+### Space naming, dark mode.
+
+# Octber 25: New feature!
+## Thought deletion
+### You're now able to delete Thoughts you wrote down with a button at the right side 
+
+![img](assets/image5.png)
+
+# October 26: New feature! (a hour later)
+## Resiable menu
+### The menu is now resizable
