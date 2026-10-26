@@ -6,6 +6,7 @@ import sys
 from typing import final
 import json
 import time
+from datetime import datetime
 from tkinter import ttk
 
 
@@ -31,7 +32,15 @@ SCROLLBAR_WIDTH = 16
 
 THOUGHT_PAD_X = 12
 THOUGHT_PAD_Y = 6
+
+THOUGHT_WRAP_MARGIN = 4 * THOUGHT_PAD_X + 44
+
 THOUGHT_BG = "#f0f0f0"
+
+MENU_DEFAULT_WIDTH = 200
+MENU_MIN_WIDTH = 140
+MENU_MAX_WIDTH = 500
+CONTENT_MIN_WIDTH = 300
 
 @final
 class App:
@@ -60,11 +69,13 @@ class App:
 
         self.space_buttons = {}
 
+        self.menu_width = MENU_DEFAULT_WIDTH
+
         self.active_idx = None
         self.save_job = None
 
         self.menu = Frame(self.root, bg="light grey")
-        self.menu.place(width=200, relheight=1)
+        self.menu.place(width=self.menu_width, relheight=1)
 
         self.scroll_targets = []
 
@@ -94,6 +105,11 @@ class App:
         self.welcome_label = Label(self.space_frame, text="Welcome!\nAdd a Space to begin.", justify=CENTER, font=("JetBrainsMono NF ExtraLight", 24))
         self.welcome_label.place(relwidth=1, relheight=1)
 
+        self.menu_handle = Frame(self.root, bg="#b8b8b8", cursor="sb_h_double_arrow")
+        self.menu_handle.bind("<B1-Motion>", self.resize_menu)
+        self.root.bind("<Configure>", self.on_root_resize)
+        self.set_menu_width(self.menu_width)
+
         self.root.bind("<Button-1>", self.on_click_anywhere)
 
         self.root.bind_all("<MouseWheel>", self.on_wheel)
@@ -103,6 +119,22 @@ class App:
         self.load()
 
         self.root.mainloop()
+
+    def set_menu_width(self, w):
+        total = self.root.winfo_width()
+        max_w = MENU_MAX_WIDTH if total <= 1 else max(MENU_MIN_WIDTH, min(MENU_MAX_WIDTH, total - CONTENT_MIN_WIDTH))
+        self.menu_width = max(MENU_MIN_WIDTH, min(max_w, int(w)))
+        self.menu.place_configure(width=self.menu_width)
+        self.space_frame.place_configure(x=self.menu_width, width=-self.menu_width)
+        self.menu_handle.place(x=self.menu_width, width=2, relheight=1)
+
+    def resize_menu(self, event):
+        self.set_menu_width(event.x_root - self.root.winfo_rootx())
+        self.schedule_save()
+
+    def on_root_resize(self, event):
+        if event.widget is self.root:
+            self.set_menu_width(self.set_menu_width)
 
     def schedule_save(self):
         if self.save_job is not None:
@@ -117,7 +149,7 @@ class App:
         order = sorted(self.thoughts)
         spaces = [{"thoughts": self.thoughts[i], "draft": self.text_bars[i].get("1.0", "end-1c")} for i in order]
         active = order.index(self.active_idx) if self.active_idx in order else None
-        data = {"version": 1, "active": active, "spaces": spaces}
+        data = {"version": 1, "menu_width": self.menu_width, "active": active, "spaces": spaces}
 
         try:
             os.makedirs(DATA_DIR, exist_ok=True)
@@ -134,6 +166,7 @@ class App:
                 data = json.load(f)
             spaces = data["spaces"]
             active = data.get("active")
+            menu_width = data.get("menu_width")
         except FileNotFoundError:
             return
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
@@ -142,6 +175,9 @@ class App:
             except OSError:
                 pass
             return
+
+        if isinstance(menu_width, int):
+            self.set_menu_width(menu_width)
 
         if not isinstance(spaces, list) or not spaces:
             return
@@ -220,7 +256,7 @@ class App:
         inner = Frame(canvas)
         window = canvas.create_window((0, 0), window=inner, anchor="nw")
 
-        area = {"frame": frame, "canvas": canvas, "inner": inner, "labels": []}
+        area = {"frame": frame, "canvas": canvas, "inner": inner, "labels": [], "rows": []}
 
         inner.bind("<Configure>",
                    lambda e, c=canvas: c.configure(scrollregion=c.bbox("all")))
@@ -228,7 +264,7 @@ class App:
         def on_canvas_resize(e, a=area, w=window):
             a["canvas"].itemconfigure(w, width=e.width)
             for lbl in a["labels"]:
-                lbl.configure(wraplength=max(50, e.width - 4 * THOUGHT_PAD_X - 4))
+                lbl.configure(wraplength=max(50, e.width - THOUGHT_WRAP_MARGIN))
 
         canvas.bind("<Configure>", on_canvas_resize)
 
@@ -240,11 +276,36 @@ class App:
     def add_thought_label(self, index, contents):
         area = self.thought_areas[index]
         width = area["canvas"].winfo_width()
-        lbl = Label(area["inner"], text=contents, bg=THOUGHT_BG, anchor="w",
-                    justify=LEFT, wraplength=max(50, width - 4 * THOUGHT_PAD_X - 4),
+
+        row = Frame(area["inner"], bg=THOUGHT_BG)
+        row.pack(fill=X, padx=THOUGHT_PAD_X, pady=(THOUGHT_PAD_Y, 0))
+
+        lbl = Label(row, text=contents, bg=THOUGHT_BG, anchor="w",
+                    justify=LEFT, wraplength=max(50, width - THOUGHT_WRAP_MARGIN),
                     padx=THOUGHT_PAD_X, pady=THOUGHT_PAD_Y)
-        lbl.pack(fill=X, padx=THOUGHT_PAD_X, pady=(THOUGHT_PAD_Y, 0))
+        lbl.pack(side=LEFT ,fill=X, expand=True)
+
+        delete_button = Button(row, text="×", bg=THOUGHT_BG, activebackground=THOUGHT_BG, 
+                               borderwidth=0, highlightthickness=0, cursor="hand2",
+                               command=lambda r=row, i=index: self.delete_thought(i, r))
+        delete_button.pack(side=RIGHT, anchor="n", padx=(0, 4), pady=2)
+
         area["labels"].append(lbl)
+        area["rows"].append(row)
+
+    def delete_thought(self, index, row):
+        area = self.thought_areas.get(index)
+        if area is None or row not in area["rows"]:
+            return
+
+        pos = area["rows"].index(row)
+        del self.thoughts[index][pos]
+        del area["labels"][pos]
+        del area["rows"][pos]
+        row.destroy()
+
+        self.save()
+
 
     def send(self, index, contents):
         contents = contents.strip()
@@ -261,9 +322,11 @@ class App:
 
         self.save()
 
-    def create_space(self, thoughts=None, draft=""):
+    def create_space(self, thoughts=None, draft="", created=None):
         self.space_idx += 1
         idx = self.space_idx
+        # self.created[idx] = datetime.now().isoformat(timespec="minutes") if created is None else created
+
 
         row = Frame(self.menu_inner, height=50)
         row.pack(fill=X)
